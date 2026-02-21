@@ -1,2 +1,2 @@
-# forecast-global-electricity-price
-Hybrid forecasting of average electricity prices through 2030 using the Global Energy Consumption dataset from Kaggle. An ARIMA model with Monte Carlo simulation generates future price scenarios, enabling comparison across multiple possible market trajectories.
+# Forecasts of electricity demand in Victoria - Australia
+This project aims to forecast daily electricity demand in Victoria, Australia using historical load data from Kaggle. By applying time series and machine learning models, the goal is to capture seasonal and daily patterns, improve prediction accuracy, and support efficient energy planning and grid management.
