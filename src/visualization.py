@@ -29,10 +29,6 @@ def create_time_series_plots(df: pd.DataFrame, time_col: str = None, numerical_c
     if numerical_cols is None:
         numerical_cols = df.select_dtypes(include=['number']).columns.tolist()
     
-    # Limit to first 6 columns if too many
-    if len(numerical_cols) > 6:
-        numerical_cols = numerical_cols[:6]
-    
     n_cols = min(len(numerical_cols), 3)
     n_rows = (len(numerical_cols) + n_cols - 1) // n_cols
     
@@ -93,10 +89,6 @@ def create_distribution_plots(df: pd.DataFrame, numerical_cols: list = None) -> 
     """
     if numerical_cols is None:
         numerical_cols = df.select_dtypes(include=['number']).columns.tolist()
-    
-    # Limit to first 6 columns if too many
-    if len(numerical_cols) > 6:
-        numerical_cols = numerical_cols[:6]
     
     n_cols = min(len(numerical_cols), 3)
     n_rows = (len(numerical_cols) + n_cols - 1) // n_cols

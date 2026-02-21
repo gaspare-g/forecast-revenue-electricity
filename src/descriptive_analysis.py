@@ -45,7 +45,7 @@ def get_numerical_descriptive_stats(df: pd.DataFrame, columns: list = None) -> p
     Returns:
     --------
     pd.DataFrame
-        Descriptive statistics including mean, median, std, min, max, distribution shape
+        Descriptive statistics including min, Q1, median, Q3, max, mean, std, and distribution shape
     """
     if columns is None:
         columns = df.select_dtypes(include=['number']).columns.tolist()
@@ -59,10 +59,10 @@ def get_numerical_descriptive_stats(df: pd.DataFrame, columns: list = None) -> p
                 'Count': df[col].count(),
                 'Missing': df[col].isnull().sum(),
                 'Mean': df[col].mean(),
-                'Median': df[col].median(),
                 'Std': df[col].std(),
                 'Min': df[col].min(),
                 'Q1': df[col].quantile(0.25),
+                'Median': df[col].median(),
                 'Q3': df[col].quantile(0.75),
                 'Max': df[col].max(),
                 'Skewness': df[col].skew(),
@@ -148,7 +148,7 @@ def print_descriptive_summary(df: pd.DataFrame):
             print(f"\n{col}:")
             print(f"  Unique Values: {summary['Unique_Count']}")
             print(f"  Missing: {summary['Missing']}")
-            print(f"  Top Values:")
+            print("  Top Values:")
             for val, count in list(summary['Value_Counts'].items())[:10]:
                 print(f"    {val}: {count}")
     print()
