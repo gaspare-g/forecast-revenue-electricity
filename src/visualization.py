@@ -5,6 +5,381 @@ Visualization functions for exploratory data analysis.
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from statsmodels.tsa.stattools import acf, pacf
+
+
+def _extract_series(
+    df: pd.DataFrame, column: str, date_col: str = None, dropna: bool = True
+) -> pd.Series:
+    """
+    Extract and optionally clean a series for lag-based analyses.
+    """
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found in dataframe.")
+
+    if date_col and date_col in df.columns:
+        series = pd.Series(df[column].values, index=pd.to_datetime(df[date_col]))
+    else:
+        series = df[column]
+
+    if dropna:
+        series = series.dropna()
+
+    if len(series) < 3:
+        raise ValueError(
+            "Series is too short after cleaning. Provide more data points for ACF/PACF."
+        )
+
+    return series
+
+
+def _get_significant_lags_table(
+    values, confint, alpha: float, column_name: str, series_name: str
+) -> pd.DataFrame:
+    """
+    Build and print a table of statistically significant lags.
+    A lag is significant when zero lies outside its confidence interval.
+    """
+    ci_lower = confint[:, 0]
+    ci_upper = confint[:, 1]
+
+    rows = []
+    for lag in range(len(values)):
+        lower = float(ci_lower[lag])
+        upper = float(ci_upper[lag])
+        value = float(values[lag])
+
+        if lower > 0:
+            significance = "Positive (above zero)"
+        elif upper < 0:
+            significance = "Negative (below zero)"
+        else:
+            continue
+
+        rows.append(
+            {
+                "Lag": lag,
+                "Value": round(value, 6),
+                "CI_Lower": round(lower, 6),
+                "CI_Upper": round(upper, 6),
+                "Significance": significance,
+            }
+        )
+
+    significant_df = pd.DataFrame(rows)
+    ci_pct = int((1 - alpha) * 100)
+    print(f"\nSignificant {series_name} lags for '{column_name}' at CI {ci_pct}%:")
+    if significant_df.empty:
+        print("No significant lags found.")
+    else:
+        print(significant_df.to_string(index=False))
+
+    return significant_df
+
+
+def create_acf_plot(
+    df: pd.DataFrame,
+    column: str,
+    date_col: str = None,
+    nlags: int = 40,
+    alpha: float = 0.05,
+    extra_lags: list = None,
+    title: str = None,
+    dropna: bool = True,
+) -> go.Figure:
+    """
+    Create an Autocorrelation Function (ACF) plot with confidence intervals.
+
+    Parameters:
+    -----------
+    extra_lags : list, optional
+        Specific lag values to highlight on top of standard lag output.
+        Useful for checking domain-relevant lags (e.g., [7, 14, 21, 28, 365]).
+    """
+    series = _extract_series(df, column, date_col=date_col, dropna=dropna)
+
+    max_lags = len(series) - 1
+    if max_lags < 1:
+        raise ValueError("Not enough observations to compute ACF.")
+
+    base_nlags = int(max(1, nlags))
+    valid_extra_lags = []
+    if extra_lags:
+        valid_extra_lags = sorted(
+            {
+                int(lag)
+                for lag in extra_lags
+                if isinstance(lag, (int, float)) and int(lag) >= 0
+            }
+        )
+
+    requested_max_lag = (
+        max([base_nlags] + valid_extra_lags) if valid_extra_lags else base_nlags
+    )
+    compute_nlags = min(requested_max_lag, max_lags)
+    display_cutoff = min(base_nlags, compute_nlags)
+
+    acf_vals, confint = acf(series, nlags=compute_nlags, alpha=alpha, fft=True)
+    lags = list(range(len(acf_vals)))
+    lags_to_plot = sorted(
+        {lag for lag in lags if lag <= display_cutoff}
+        | {lag for lag in valid_extra_lags if lag <= compute_nlags}
+    )
+    lag_to_pos = {lag: pos for pos, lag in enumerate(lags_to_plot)}
+
+    fig = go.Figure()
+
+    for lag in lags_to_plot:
+        val = acf_vals[lag]
+        x_pos = lag_to_pos[lag]
+        fig.add_shape(
+            type="line",
+            x0=x_pos,
+            x1=x_pos,
+            y0=0,
+            y1=float(val),
+            line=dict(color="#1f77b4", width=2),
+        )
+
+    acf_custom_data = [[lag] for lag in lags_to_plot]
+    fig.add_trace(
+        go.Scatter(
+            x=[lag_to_pos[lag] for lag in lags_to_plot],
+            y=[acf_vals[lag] for lag in lags_to_plot],
+            mode="markers",
+            marker=dict(color="#1f77b4", size=8),
+            name="ACF",
+            customdata=acf_custom_data,
+            hovertemplate="Lag %{customdata[0]}<br>ACF %{y:.4f}<extra></extra>",
+        )
+    )
+
+    upper = confint[:, 1] - acf_vals
+    lower = confint[:, 0] - acf_vals
+    ci_custom_data = [[lag] for lag in lags_to_plot]
+    fig.add_trace(
+        go.Scatter(
+            x=[lag_to_pos[lag] for lag in lags_to_plot],
+            y=[upper[lag] for lag in lags_to_plot],
+            mode="lines",
+            line=dict(color="rgba(214, 39, 40, 0.7)", dash="dash"),
+            name=f"Upper CI ({int((1-alpha)*100)}%)",
+            customdata=ci_custom_data,
+            hovertemplate="Lag %{customdata[0]}<br>Upper CI %{y:.4f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[lag_to_pos[lag] for lag in lags_to_plot],
+            y=[lower[lag] for lag in lags_to_plot],
+            mode="lines",
+            line=dict(color="rgba(214, 39, 40, 0.7)", dash="dash"),
+            name=f"Lower CI ({int((1-alpha)*100)}%)",
+            customdata=ci_custom_data,
+            hovertemplate="Lag %{customdata[0]}<br>Lower CI %{y:.4f}<extra></extra>",
+        )
+    )
+
+    fig.add_hline(y=0, line_width=1, line_color="black")
+    fig.update_layout(
+        title=title or f"Autocorrelation Function (ACF) - {column}",
+        xaxis_title="Lag",
+        yaxis_title="Autocorrelation",
+        template="plotly_white",
+        height=450,
+        hovermode="x",
+    )
+    fig.update_xaxes(showticklabels=False, range=[-0.5, len(lags_to_plot) - 0.5])
+
+    if valid_extra_lags:
+        highlighted_lags = [lag for lag in valid_extra_lags if lag <= compute_nlags]
+        if highlighted_lags:
+            highlighted_values = [float(acf_vals[lag]) for lag in highlighted_lags]
+            for lag in highlighted_lags:
+                x_pos = lag_to_pos[lag]
+                fig.add_vline(
+                    x=x_pos,
+                    line_width=1,
+                    line_dash="dot",
+                    line_color="rgba(255, 127, 14, 0.8)",
+                )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=[lag_to_pos[lag] for lag in highlighted_lags],
+                    y=highlighted_values,
+                    mode="markers+text",
+                    text=[f"Lag {lag}" for lag in highlighted_lags],
+                    textposition="top center",
+                    marker=dict(color="#ff7f0e", size=10, symbol="diamond"),
+                    name="Extra lags",
+                    customdata=[[lag] for lag in highlighted_lags],
+                    hovertemplate="Lag %{customdata[0]}<br>ACF %{y:.4f}<extra></extra>",
+                )
+            )
+
+    _get_significant_lags_table(
+        values=acf_vals,
+        confint=confint,
+        alpha=alpha,
+        column_name=column,
+        series_name="ACF",
+    )
+
+    return fig
+
+
+def create_pacf_plot(
+    df: pd.DataFrame,
+    column: str,
+    date_col: str = None,
+    nlags: int = 40,
+    alpha: float = 0.05,
+    extra_lags: list = None,
+    method: str = "ywm",
+    title: str = None,
+    dropna: bool = True,
+) -> go.Figure:
+    """
+    Create a Partial Autocorrelation Function (PACF) plot with confidence intervals.
+
+    Parameters:
+    -----------
+    extra_lags : list, optional
+        Specific lag values to highlight on top of standard lag output.
+        Useful for checking domain-relevant lags (e.g., [7, 14, 21, 28, 365]).
+    """
+    series = _extract_series(df, column, date_col=date_col, dropna=dropna)
+
+    max_lags = max(1, (len(series) // 2) - 1)
+    base_nlags = int(max(1, nlags))
+    valid_extra_lags = []
+    if extra_lags:
+        valid_extra_lags = sorted(
+            {
+                int(lag)
+                for lag in extra_lags
+                if isinstance(lag, (int, float)) and int(lag) >= 0
+            }
+        )
+
+    requested_max_lag = (
+        max([base_nlags] + valid_extra_lags) if valid_extra_lags else base_nlags
+    )
+    compute_nlags = min(requested_max_lag, max_lags)
+    display_cutoff = min(base_nlags, compute_nlags)
+
+    if compute_nlags < 1:
+        raise ValueError("Not enough observations to compute PACF.")
+
+    pacf_vals, confint = pacf(series, nlags=compute_nlags, alpha=alpha, method=method)
+    lags = list(range(len(pacf_vals)))
+    lags_to_plot = sorted(
+        {lag for lag in lags if lag <= display_cutoff}
+        | {lag for lag in valid_extra_lags if lag <= compute_nlags}
+    )
+    lag_to_pos = {lag: pos for pos, lag in enumerate(lags_to_plot)}
+
+    fig = go.Figure()
+
+    for lag in lags_to_plot:
+        val = pacf_vals[lag]
+        x_pos = lag_to_pos[lag]
+        fig.add_shape(
+            type="line",
+            x0=x_pos,
+            x1=x_pos,
+            y0=0,
+            y1=float(val),
+            line=dict(color="#2ca02c", width=2),
+        )
+
+    pacf_custom_data = [[lag] for lag in lags_to_plot]
+    fig.add_trace(
+        go.Scatter(
+            x=[lag_to_pos[lag] for lag in lags_to_plot],
+            y=[pacf_vals[lag] for lag in lags_to_plot],
+            mode="markers",
+            marker=dict(color="#2ca02c", size=8),
+            name="PACF",
+            customdata=pacf_custom_data,
+            hovertemplate="Lag %{customdata[0]}<br>PACF %{y:.4f}<extra></extra>",
+        )
+    )
+
+    upper = confint[:, 1] - pacf_vals
+    lower = confint[:, 0] - pacf_vals
+    ci_custom_data = [[lag] for lag in lags_to_plot]
+    fig.add_trace(
+        go.Scatter(
+            x=[lag_to_pos[lag] for lag in lags_to_plot],
+            y=[upper[lag] for lag in lags_to_plot],
+            mode="lines",
+            line=dict(color="rgba(214, 39, 40, 0.7)", dash="dash"),
+            name=f"Upper CI ({int((1-alpha)*100)}%)",
+            customdata=ci_custom_data,
+            hovertemplate="Lag %{customdata[0]}<br>Upper CI %{y:.4f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[lag_to_pos[lag] for lag in lags_to_plot],
+            y=[lower[lag] for lag in lags_to_plot],
+            mode="lines",
+            line=dict(color="rgba(214, 39, 40, 0.7)", dash="dash"),
+            name=f"Lower CI ({int((1-alpha)*100)}%)",
+            customdata=ci_custom_data,
+            hovertemplate="Lag %{customdata[0]}<br>Lower CI %{y:.4f}<extra></extra>",
+        )
+    )
+
+    fig.add_hline(y=0, line_width=1, line_color="black")
+    fig.update_layout(
+        title=title or f"Partial Autocorrelation Function (PACF) - {column}",
+        xaxis_title="Lag",
+        yaxis_title="Partial Autocorrelation",
+        template="plotly_white",
+        height=450,
+        hovermode="x",
+    )
+    fig.update_xaxes(showticklabels=False, range=[-0.5, len(lags_to_plot) - 0.5])
+
+    if valid_extra_lags:
+        highlighted_lags = [lag for lag in valid_extra_lags if lag <= compute_nlags]
+        if highlighted_lags:
+            highlighted_values = [float(pacf_vals[lag]) for lag in highlighted_lags]
+            for lag in highlighted_lags:
+                x_pos = lag_to_pos[lag]
+                fig.add_vline(
+                    x=x_pos,
+                    line_width=1,
+                    line_dash="dot",
+                    line_color="rgba(255, 127, 14, 0.8)",
+                )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=[lag_to_pos[lag] for lag in highlighted_lags],
+                    y=highlighted_values,
+                    mode="markers+text",
+                    text=[f"Lag {lag}" for lag in highlighted_lags],
+                    textposition="top center",
+                    marker=dict(color="#ff7f0e", size=10, symbol="diamond"),
+                    name="Extra lags",
+                    customdata=[[lag] for lag in highlighted_lags],
+                    hovertemplate="Lag %{customdata[0]}<br>PACF %{y:.4f}<extra></extra>",
+                )
+            )
+
+    _get_significant_lags_table(
+        values=pacf_vals,
+        confint=confint,
+        alpha=alpha,
+        column_name=column,
+        series_name="PACF",
+    )
+
+    return fig
 
 
 def create_time_series_plots(
