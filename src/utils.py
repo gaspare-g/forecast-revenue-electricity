@@ -23,18 +23,26 @@ def load_kaggle_dataset(dataset_name: str) -> pd.DataFrame:
         Combined dataframe from all CSV files in the dataset
     """
     load_dotenv()
-    path = kagglehub.dataset_download(dataset_name)
-    print(f"Dataset downloaded to: {path}")
+    local_fallback = Path("complete_dataset.csv")
 
-    # Load all CSV files from the dataset
-    csv_files = list(Path(path).glob("*.csv"))
+    try:
+        path = kagglehub.dataset_download(dataset_name)
+        print("Dataset downloaded.")
 
-    if not csv_files:
-        raise FileNotFoundError(f"No CSV files found in {path}")
+        # Load all CSV files from the dataset
+        csv_files = list(Path(path).glob("*.csv"))
+        if not csv_files:
+            raise FileNotFoundError("No CSV files found in downloaded Kaggle dataset.")
 
-    # Load the first CSV file
-    df = pd.read_csv(csv_files[0])
-    return df
+        # Load the first CSV file
+        return pd.read_csv(csv_files[0])
+    except Exception as kaggle_error:
+        if local_fallback.exists():
+            print("Kaggle download unavailable. Using local complete_dataset.csv.")
+            return pd.read_csv(local_fallback)
+        raise RuntimeError(
+            "Kaggle download failed and local fallback complete_dataset.csv was not found."
+        ) from kaggle_error
 
 
 def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -64,7 +72,7 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
     for col in date_columns:
         try:
             df[col] = pd.to_datetime(df[col], errors="coerce")
-        except:
+        except:  # noqa: E722
             pass
 
     return df
