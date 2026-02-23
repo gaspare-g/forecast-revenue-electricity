@@ -23,6 +23,7 @@ dependencies = [
     "holidays>=0.56",
     "openpyxl",
     "holidays",
+    "kaleido",
     "ruff"
 ]
 
