@@ -52,9 +52,9 @@ uv sync
 ```
 
 ## Notebook Viewer
-To view the notebook with full rendering (plots/tables), open:
+[![Jupyter Notebook](https://img.shields.io/badge/Jupyter-Notebook-F37626?logo=jupyter&logoColor=white)](https://nbviewer.org/github/gaspare-g/forecast-revenue-electricity/blob/main/analysis.ipynb)
 
-- https://nbviewer.org/github/gaspare-g/forecast-revenue-electricity/blob/main/analysis.ipynb
+[Click here to see the Jupyter notebook.](https://nbviewer.org/github/gaspare-g/forecast-revenue-electricity/blob/main/analysis.ipynb)
 
 ## Data Access Note
 A Kaggle API key is needed to download the dataset directly from Kaggle. If no key is available, the repository dataset (`complete_dataset.csv`) is used as fallback.
@@ -81,3 +81,4 @@ Units:
 | 2021Q4 | Pessimistic | 9.5757 | 30.3347 | 292.8484 |
 | 2021Q4 | Expected | 9.7598 | 41.9039 | 410.4880 |
 | 2021Q4 | Optimistic | 9.9144 | 54.7599 | 544.2795 |
+
